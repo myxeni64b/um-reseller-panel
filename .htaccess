@@ -1,0 +1,25 @@
+Options -Indexes
+RewriteEngine On
+
+# --- Deny direct web access to non-public application paths ---
+RewriteRule ^(?:app|storage|scripts)(?:/|$) - [F,L,NC]
+
+# --- Deny direct access to sensitive root files ---
+RewriteRule ^(?:config\.php|README(?:\.md)?|composer\.(?:json|lock)|phpunit\.xml(?:\.dist)?|test\.txt)$ - [F,L,NC]
+
+# --- Deny hidden files/directories except ACME/.well-known ---
+RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L,NC]
+
+# --- Deny common sensitive file types anywhere under this document root ---
+RewriteRule \.(?:env|ini|json|lock|log|sql|sqlite|sqlite3|db|bak|dist|md|ya?ml|pem|key|crt|csr|sh|py)$ - [F,L,NC]
+
+# --- Public assets shortcut ---
+RewriteRule ^assets/(.*)$ public/assets/$1 [L,NC]
+
+# --- Existing public files/directories may pass ---
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# --- Front controller ---
+RewriteRule ^ index.php [L]
