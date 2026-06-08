@@ -1,0 +1,136 @@
+<?php
+/**
+ * Minimal reseller API example for the panel.
+ * Rename this file to reseller_api_example.php before running it.
+ *
+ * Supports:
+ * - plain JSON mode
+ * - encrypted mode (AES-256-CBC) when API encryption is enabled by admin
+ *
+ * Requires:
+ * - PHP with curl
+ * - OpenSSL extension only when encrypted mode is enabled
+ */
+
+$baseUrl = 'https://your-panel.example.com';
+$apiKey = 'PASTE_RESELLER_API_KEY_HERE';
+$useEncryption = false; // set true when reseller profile says API encryption is Required
+
+function apiCryptoKey($apiKey)
+{
+    return hash('sha256', 'panel-api|' . $apiKey, true);
+}
+
+function apiRequest($method, $path, $data = null)
+{
+    global $baseUrl, $apiKey, $useEncryption;
+
+    $url = rtrim($baseUrl, '/') . '/api/reseller' . $path;
+    $headers = array(
+        'Accept: application/json',
+        'X-Reseller-Api-Key: ' . $apiKey,
+    );
+
+    $body = null;
+    if ($method !== 'GET' && $data !== null) {
+        if ($useEncryption) {
+            if (!function_exists('openssl_encrypt')) {
+                throw new RuntimeException('OpenSSL is required for encrypted API mode.');
+            }
+            $json = json_encode($data, JSON_UNESCAPED_SLASHES);
+            $iv = function_exists('random_bytes') ? random_bytes(16) : openssl_random_pseudo_bytes(16);
+            $cipher = openssl_encrypt($json, 'AES-256-CBC', apiCryptoKey($apiKey), OPENSSL_RAW_DATA, $iv);
+            if ($cipher === false) {
+                throw new RuntimeException('Could not encrypt request payload.');
+            }
+            $body = json_encode(array(
+                'iv' => base64_encode($iv),
+                'payload' => base64_encode($cipher),
+            ));
+        } else {
+            $body = json_encode($data, JSON_UNESCAPED_SLASHES);
+        }
+        $headers[] = 'Content-Type: application/json';
+    }
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+    if ($body !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+    }
+
+    $response = curl_exec($ch);
+    if ($response === false) {
+        throw new RuntimeException('cURL error: ' . curl_error($ch));
+    }
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    $decoded = json_decode($response, true);
+    if (!is_array($decoded)) {
+        throw new RuntimeException('Invalid JSON response: ' . $response);
+    }
+
+    if (!empty($decoded['encrypted'])) {
+        if (!function_exists('openssl_decrypt')) {
+            throw new RuntimeException('OpenSSL is required to decrypt API response.');
+        }
+        $iv = base64_decode($decoded['iv'], true);
+        $payload = base64_decode($decoded['payload'], true);
+        $plain = openssl_decrypt($payload, 'AES-256-CBC', apiCryptoKey($apiKey), OPENSSL_RAW_DATA, $iv);
+        $decoded = json_decode($plain, true);
+        if (!is_array($decoded)) {
+            throw new RuntimeException('Could not decrypt JSON response.');
+        }
+    }
+
+    return array($status, $decoded);
+}
+
+try {
+    list($status, $profile) = apiRequest('GET', '/profile');
+    echo "PROFILE (HTTP {$status})\n";
+    print_r($profile);
+
+    list($status, $templates) = apiRequest('GET', '/templates');
+    echo "\nTEMPLATES (HTTP {$status})\n";
+    print_r($templates);
+
+    // Replace template_id with one of the template IDs from /templates.
+    // For XUI templates, send traffic_gb.
+    // For UM templates, omit traffic_gb because billing_gb comes from the UM profile template.
+    $createPayload = array(
+        'display_name' => 'API Demo User',
+        'phone' => '989121234567',
+        'access_pin' => 'A12345',
+        'template_id' => 'PUT_TEMPLATE_ID_HERE',
+        'traffic_gb' => 5,
+        'ip_limit' => 1,
+        'duration_days' => 30,
+        'duration_mode' => 'first_use',
+        'status' => 'active',
+        'notes' => 'Created by PHP API example',
+    );
+
+    // Example UM create payload:
+    // $createPayload = array(
+    //     'display_name' => 'UM Demo User',
+    //     'phone' => '989121234567',
+    //     'access_pin' => 'A12345',
+    //     'template_id' => 'PUT_UM_TEMPLATE_ID_HERE',
+    //     'duration_days' => 30,
+    //     'duration_mode' => 'first_use',
+    //     'status' => 'active',
+    //     'notes' => 'Created by PHP API example',
+    // );
+
+    // Uncomment to create a customer.
+    // list($status, $create) = apiRequest('POST', '/customers/create', $createPayload);
+    // echo "\nCREATE CUSTOMER (HTTP {$status})\n";
+    // print_r($create);
+} catch (Exception $e) {
+    echo 'ERROR: ' . $e->getMessage() . PHP_EOL;
+}

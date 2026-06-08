@@ -1,0 +1,11 @@
+Options -Indexes
+RewriteEngine On
+
+# Deny hidden files except ACME/.well-known
+RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L,NC]
+
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+RewriteRule ^ index.php [L]

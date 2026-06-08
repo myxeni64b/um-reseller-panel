@@ -1,0 +1,16 @@
+[Unit]
+Description=XUI Reseller Telegram Poller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Environment="POLL_URL=https://example.com/shop/telegram/poll/SECRET?timeout=55"
+ExecStart=/bin/bash -lc 'while true; do /path/to/project/scripts/telegram_poll_runner.sh "$POLL_URL"; sleep 1; done'
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
